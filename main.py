@@ -1,20 +1,37 @@
 from transformers import WhisperProcessor, WhisperForConditionalGeneration
-from datasets import Audio, load_dataset
+import torch
+import librosa
 
-# load model and processor
+# Load the Whisper processor and model
 processor = WhisperProcessor.from_pretrained("openai/whisper-large-v2")
 model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-large-v2")
-forced_decoder_ids = processor.get_decoder_prompt_ids(language="french", task="translate")
+forced_decoder_ids = processor.get_decoder_prompt_ids(language="bosnian", task="translate")
 
-# load streaming dataset and read first audio sample
-ds = load_dataset("common_voice", "fr", split="test", streaming=True)
-ds = ds.cast_column("audio", Audio(sampling_rate=16_000))
-input_speech = next(iter(ds))["audio"]
-input_features = processor(input_speech["array"], sampling_rate=input_speech["sampling_rate"], return_tensors="pt").input_features
+# Load and process your long audio file (ensure it's 16,000 Hz)
+custom_audio_path = "output_audio.wav"
+custom_audio, sr = librosa.load(custom_audio_path, sr=16000)  # Ensure 16,000 Hz sampling rate
 
-# generate token ids
-predicted_ids = model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
-# decode token ids to text
-transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)
+# Split the long audio into smaller segments (e.g., 30-second chunks)
+segment_duration = 30  # seconds
+segment_length = sr * segment_duration
 
-print(transcription)
+# Initialize a list to store transcriptions
+transcriptions = []
+
+# Process and transcribe each segment
+for i in range(0, len(custom_audio), segment_length):
+    segment = custom_audio[i:i + segment_length]
+    input_features = processor(segment, sampling_rate=sr, return_tensors="pt").input_features
+
+    # Generate token ids
+    predicted_ids = model.generate(input_features, forced_decoder_ids=forced_decoder_ids)
+
+    # Decode token ids to text and append to the list
+    transcription = processor.batch_decode(predicted_ids, skip_special_tokens=True)[0]
+    transcriptions.append(transcription)
+
+# Concatenate transcriptions into a single text
+full_transcription = " ".join(transcriptions)
+
+# Print the full transcription
+print(full_transcription)
